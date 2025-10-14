@@ -1,0 +1,1702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>画像ビューア (ZIP/フォルダ対応)test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #viewerArea {}
+
+        .image-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #e5e7eb; /* bg-gray-200 */
+            border-radius: 0.375rem; /* rounded-md */
+            transition: background-color 0.3s ease-in-out, border-radius 0.3s ease-in-out;
+        }
+
+        .image-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            padding: 0.5rem;
+            transition: padding 0.3s ease-in-out;
+        }
+
+        .image-wrapper img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 0.25rem; /* rounded-sm */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* shadow-sm */
+            transition: box-shadow 0.3s ease-in-out, border-radius 0.3s ease-in-out;
+        }
+
+        .image-container.double-page {
+            display: flex !important;
+            gap: 0 !important;
+        }
+        .image-container.double-page .image-wrapper {
+            width: 50% !important;
+            padding: 0.125rem; /* p-0.5 */
+        }
+        .image-container.double-page .image-wrapper:first-child {
+            justify-content: flex-end !important;
+        }
+        .image-container.double-page .image-wrapper:nth-child(2) {
+            justify-content: flex-start !important;
+        }
+
+
+        /* コントロールボタンの基本スタイル */
+        .control-button-group button {
+            padding: 0.375rem 0.75rem; /* py-1.5 px-3 */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            background-color: #f9fafb; /* bg-gray-50 */
+            color: #374151; /* text-gray-700 */
+            font-size: 0.875rem; /* text-sm */
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .control-button-group button:hover {
+            background-color: #f3f4f6; /* hover:bg-gray-100 */
+        }
+        .control-button-group button.active {
+            background-color: #3b82f6; /* bg-blue-500 */
+            color: white;
+            border-color: #3b82f6; /* border-blue-500 */
+        }
+        .control-button-group button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .control-button-group button:first-child {
+            border-top-left-radius: 0.375rem; /* rounded-l-md */
+            border-bottom-left-radius: 0.375rem;
+        }
+        .control-button-group button:last-child {
+            border-top-right-radius: 0.375rem; /* rounded-r-md */
+            border-bottom-right-radius: 0.375rem;
+        }
+        .control-button-group button:not(:first-child) {
+            margin-left: -1px; /* ボタン間のボーダー重複を防ぐ */
+        }
+
+        /* 機能ボタンのスタイル */
+        .action-button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            background-color: #ffffff; /* bg-white */
+            color: #374151; /* text-gray-700 */
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+            text-align: center;
+            font-size: 0.875rem; /* text-sm */
+        }
+        .action-button:hover {
+            background-color: #f3f4f6; /* hover:bg-gray-100 */
+        }
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .action-button.primary {
+            background-color: #60a5fa; /* bg-blue-400 */
+            color: white;
+            border-color: #60a5fa;
+        }
+        .action-button.primary:hover {
+            background-color: #3b82f6; /* hover:bg-blue-500 */
+        }
+         .action-button.danger {
+            background-color: #f87171; /* bg-red-400 */
+            color: white;
+            border-color: #f87171;
+        }
+        .action-button.danger:hover {
+            background-color: #ef4444; /* hover:bg-red-500 */
+        }
+
+
+        #controlSidebar label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 0.25rem;
+        }
+        .status-message {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 1rem;
+            color: #4b5563;
+            width: 100%;
+            height: 100%;
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 140px;
+            background-color: #374151; /* bg-gray-700 */
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 10;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -70px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.75rem; /* text-xs */
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        /* Slider thumb style for Webkit browsers */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 1rem; /* 16px */
+            height: 1rem; /* 16px */
+            background: #3b82f6; /* bg-blue-500 */
+            cursor: pointer;
+            border-radius: 50%;
+            margin-top: -0.375rem; /* (track_height - thumb_height) / 2 roughly. Adjust if track height changes */
+        }
+
+        /* Slider thumb style for Firefox */
+        input[type=range]::-moz-range-thumb {
+            width: 1rem; /* 16px */
+            height: 1rem; /* 16px */
+            background: #3b82f6; /* bg-blue-500 */
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+        /* Slider track style */
+        input[type=range] {
+            height: 0.5rem; /* h-2 */
+        }
+        input[type=range]:disabled::-webkit-slider-thumb {
+            background: #9ca3af; /* gray-400 */
+        }
+        input[type=range]:disabled::-moz-range-thumb {
+            background: #9ca3af; /* gray-400 */
+        }
+        /* === Fullscreen Mode Styles (Consolidated) === */
+        .image-container.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 9999;
+            display: flex !important;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100vh;
+            padding: 0 !important;
+            margin: 0 !important;
+            background-color: #000;
+            border-radius: 0;
+            gap: 0 !important;
+        }
+
+        .image-container.fullscreen.double-page {
+            flex-direction: row;
+        }
+
+        .image-container.fullscreen.double-page .image-wrapper {
+            width: 50vw !important;  /* ビューポート幅の半分を厳密指定 */
+            height: 100vh !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .image-container.fullscreen.double-page .image-wrapper img {
+            height: 100vh;
+            width: auto; /* 高さ基準で表示 */
+            object-fit: cover; /* 上下に黒帯が出ないようにする */
+            margin: 0;
+            display: block;
+            border: none;
+        }
+
+        /* 左右画像が中央で完全密着するように配置 */
+        .image-container.fullscreen.double-page .image-wrapper:first-child {
+            justify-content: flex-end !important;
+        }
+        .image-container.fullscreen.double-page .image-wrapper:nth-child(2) {
+            justify-content: flex-start !important;
+        }
+
+        /* 単一ページ時の最大表示 */
+        .image-container.fullscreen:not(.double-page) .image-wrapper {
+            width: 100vw !important;
+            height: 100vh !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .image-container.fullscreen:not(.double-page) .image-wrapper img {
+            height: 100vh;
+            width: auto;
+            object-fit: contain;
+        }
+
+        /* ツリービュー */
+        #fileTreeSidebar {
+            scrollbar-width: thin;
+            scrollbar-color: #a0aec0 #f7fafc;
+            flex-shrink: 0; /* Important for resizing */
+        }
+        #fileTreeSidebar::-webkit-scrollbar { width: 8px; }
+        #fileTreeSidebar::-webkit-scrollbar-track { background: #edf2f7; }
+        #fileTreeSidebar::-webkit-scrollbar-thumb { background-color: #a0aec0; border-radius: 4px; }
+        .tree ul { padding-left: 1rem; list-style: none; }
+        .tree li { padding: 0.125rem 0; }
+        .tree-item { cursor: pointer; display: flex; align-items: center; padding: 0.25rem 0.5rem; border-radius: 0.25rem; transition: background-color 0.2s; user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tree-item:hover { background-color: #e2e8f0; /* hover:bg-gray-200 */ }
+        .tree-item.active-viewer { background-color: #3b82f6; color: white; }
+        .tree-item .icon { margin-right: 0.5rem; width: 1rem; height: 1rem; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+        .tree-folder .icon::before { content: '▶'; font-size: 0.6em; transition: transform 0.1s ease-in-out; }
+        .tree-folder.open > .tree-item .icon::before { transform: rotate(90deg); }
+        .tree-file .icon::before { content: '📄'; font-size: 0.8em; }
+        .tree-zip .icon::before { content: '📦'; font-size: 0.8em; }
+        .tree-folder > ul { display: none; }
+        .tree-folder.open > ul { display: block; }
+        
+        /* ▼▼▼ 追加箇所 (リサイズハンドル) ▼▼▼ */
+        #resizeHandle {
+            flex-basis: 5px;
+            flex-shrink: 0;
+            cursor: col-resize;
+            background-color: #e2e8f0; /* bg-gray-200 */
+            transition: background-color 0.2s;
+        }
+        #resizeHandle:hover {
+            background-color: #3b82f6; /* bg-blue-500 */
+        }
+        body.resizing {
+            cursor: col-resize;
+            user-select: none;
+        }
+        /* ▲▲▲ 追加箇所 (リサイズハンドル) ▲▲▲ */
+
+        /* Drop zone styles */
+        #dropZone.dragging {
+            border-color: #3b82f6;
+            background-color: #dbeafe;
+        }
+    </style>
+</head>
+<body class="bg-gray-200 text-gray-800 p-0 md:p-4 h-screen flex flex-col">
+
+    <div class="w-full h-full bg-white md:rounded-lg md:shadow-lg flex flex-col overflow-hidden">
+        <div class="flex flex-col md:flex-row gap-0 flex-grow min-h-0 p-0 md:p-4">
+            
+            <div id="fileTreeSidebar" class="w-full md:w-auto bg-gray-50 p-3 md:rounded-md md:shadow-sm overflow-y-auto order-1 md:order-1 border-b md:border-b-0 md:border-r" style="flex-basis: 288px;">
+                <div id="treeInitialMessage" class="text-sm text-gray-500">
+                    「起点フォルダを選択してブラウズ」ボタンから、表示したいフォルダを選択してください。<br><br>
+                    <span class="font-bold text-red-600">※ この機能はChrome/Edge推奨です。</span>
+                </div>
+            </div>
+
+            <div id="resizeHandle" class="hidden md:block order-2"></div>
+            
+            <div id="viewerArea" class="flex-grow flex flex-col min-h-0 order-3 md:order-3 bg-white md:rounded-md md:shadow-sm">
+            <div id="imageContainerHost" class="flex-grow relative overflow-hidden">
+                    <div id="initialMessage" class="status-message text-lg">
+                        右側のパネルからZIPファイルやフォルダを選択するか、<br>
+                        ドロップエリアにドラッグ&amp;ドロップしてください。
+                    </div>
+                    <div id="loadingMessage" class="status-message hidden text-lg">
+                        読み込み中...
+                        <div id="progressBarContainer" class="hidden mt-4" style="width: 80%; max-width: 400px;">
+                            <div style="background: #e5e7eb; border-radius: 9999px; height: 8px; overflow: hidden;">
+                                <div id="progressBar" style="background: #3b82f6; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                            </div>
+                            <div id="progressText" class="text-sm text-gray-600 mt-2"></div>
+                        </div>
+                    </div>
+                    <div id="noImagesMessage" class="status-message hidden text-lg">画像が見つかりません。(jpg, png, gif, webp)</div>
+                    <div id="imageContainer" class="image-container hidden"></div>
+                </div>
+                <div id="navigationControls" class="flex justify-between items-center p-2 border-t border-gray-200 hidden flex-shrink-0">
+                    <button id="prevButton" class="action-button primary w-auto px-3">&lt; 前へ</button>
+                    <div class="flex-grow mx-2 flex items-center">
+                        <input type="range" id="pageSlider" class="w-full bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 mx-2" min="0" value="0" disabled>
+                        <div id="pageInfo" class="text-xs md:text-sm text-gray-600 ml-2 text-center whitespace-nowrap">ページ情報</div>
+                    </div>
+                    <button id="nextButton" class="action-button primary w-auto px-3">次へ &gt;</button>
+                </div>
+            </div>
+
+            <div id="controlSidebar" class="w-full md:w-60 lg:w-64 flex-shrink-0 bg-gray-50 p-3 md:p-4 md:rounded-md md:shadow-sm space-y-4 overflow-y-auto order-4 md:order-4 border-t md:border-none ml-0 md:ml-4">
+                 <div>
+                    <label class="mb-1">ファイルブラウザ:</label>
+                    <button id="browseFileSystemButton" class="action-button primary">起点フォルダを選択</button>
+                    <p class="text-xs text-gray-500 mt-1">※ Chrome/Edge推奨</p>
+                </div>
+                <hr>
+                <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded p-4 text-center transition-colors">
+                    <p class="text-sm text-gray-500 mb-2">ZIPファイルまたはフォルダをここにドロップ</p>
+                    <button id="unifiedOpenButton" class="action-button primary">ファイル/フォルダを選択...</button>
+                    <input type="file" id="unifiedFileInput" accept=".zip" class="hidden">
+                    <input type="file" id="unifiedFolderInput" webkitdirectory directory multiple class="hidden">
+                </div>
+                <hr>
+                <div>
+                    <label class="mb-1">表示モード:</label>
+                    <div id="viewModeButtons" class="control-button-group flex">
+                        <button data-value="single" class="flex-1">単一</button>
+                        <button data-value="double" class="flex-1">見開き</button>
+                    </div>
+                </div>
+
+                <div id="pageOrderControl" class="hidden">
+                    <label class="mb-1">綴じ方 (見開き時):</label>
+                    <div id="pageOrderButtons" class="control-button-group flex">
+                        <button data-value="left" class="flex-1">左綴じ</button>
+                        <button data-value="right" class="flex-1">右綴じ</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="mb-1">自動再生間隔:</label>
+                    <div id="autoPlayIntervalButtons" class="control-button-group grid grid-cols-3 gap-px">
+                        <button data-value="1000" class="col-span-1 rounded-l-md">1秒</button>
+                        <button data-value="3000" class="col-span-1">3秒</button>
+                        <button data-value="5000" class="col-span-1 rounded-r-md">5秒</button>
+                    </div>
+                </div>
+
+                <div class="tooltip">
+                    <button id="autoPlayButton" class="action-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-play-fill inline-block mr-1" viewBox="0 0 16 16"><path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/></svg>
+                        <span class="button-text">自動再生</span>
+                    </button>
+                    <span class="tooltiptext">自動再生を開始/停止</span>
+                </div>
+                <div class="tooltip">
+                    <button id="fullscreenButton" class="action-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrows-fullscreen inline-block mr-1" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707zm4.344 0a.5.5 0 0 1 .707 0l4.096 4.096V11.5a.5.5 0 1 1 1 0v3.975a.5.5 0 0 1-.5.5H11.5a.5.5 0 0 1 0-1h2.768l-4.096-4.096a.5.5 0 0 1 0-.707zm0-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707zm-4.344 0a.5.5 0 0 1-.707 0L1.025 1.732V4.5a.5.5 0 0 1-1 0V.525a.5.5 0 0 1 .5-.5H4.5a.5.5 0 0 1 0 1H1.732l4.096 4.096a.5.5 0 0 1 0 .707z"/>
+                        </svg><span class="button-text">フルスクリーン</span>
+                    </button>
+                    <span class="tooltiptext">フルスクリーン切替 (F / DblClick)</span>
+                </div>
+                <div>
+                    <button id="resetButton" class="action-button danger">ビューアーをリセット</button>
+                </div>
+                <div class="tooltip">
+                    <button id="helpButton" class="action-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-question-circle inline-block mr-1" viewBox="0 0 16 16">
+                            <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                            <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286zm1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94z"/>
+                        </svg>
+                        <span class="button-text">ヘルプ (?)</span>
+                    </button>
+                    <span class="tooltiptext">キーボードショートカット一覧</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== Constants =====
+        // UI Constraints
+        const TREE_MIN_WIDTH = 150;
+        const TREE_MAX_WIDTH = 1200;
+
+        // Timing & Debounce
+        const WHEEL_DEBOUNCE_MS = 500;
+        const CLICK_DELAY_MS = 200;
+
+        // Default Settings
+        const DEFAULT_AUTOPLAY_DELAY = 3000;
+
+        // File Size Limits (in bytes)
+        const MAX_ZIP_SIZE = 500 * 1024 * 1024;  // 500MB
+        const MAX_TOTAL_IMAGES_SIZE = 1024 * 1024 * 1024;  // 1GB
+        const WARNING_ZIP_SIZE = 200 * 1024 * 1024;  // 200MB
+
+        // LocalStorage Keys
+        const SETTINGS_KEY = 'imageViewerSettings';
+        const TREE_WIDTH_KEY = 'treeViewerWidth';
+
+        // File Extensions
+        const IMAGE_EXTENSIONS_REGEX = /\.(jpe?g|png|gif|webp)$/i;
+        const ZIP_EXTENSION_REGEX = /\.zip$/i;
+
+        // Keyboard Shortcuts
+        const KEYBOARD_SHORTCUTS = {
+            PREV_PAGE: 'ArrowLeft',
+            NEXT_PAGE: 'ArrowRight',
+            FIRST_PAGE: 'Home',
+            LAST_PAGE: 'End',
+            FULLSCREEN: 'f',
+            ESCAPE: 'Escape',
+            AUTOPLAY: ' ',  // Space
+            SINGLE_VIEW: '1',
+            DOUBLE_VIEW: '2',
+            RESET: 'r',
+            HELP: '?'
+        };
+
+        // ===== DOM Elements =====
+        const dropZone = document.getElementById('dropZone');
+        const unifiedOpenButton = document.getElementById('unifiedOpenButton');
+        const unifiedFileInput = document.getElementById('unifiedFileInput');
+        const unifiedFolderInput = document.getElementById('unifiedFolderInput');
+        const browseFileSystemButton = document.getElementById('browseFileSystemButton');
+        const imageContainer = document.getElementById('imageContainer');
+        const imageContainerHost = document.getElementById('imageContainerHost');
+        const prevButton = document.getElementById('prevButton');
+        const nextButton = document.getElementById('nextButton');
+        const pageSlider = document.getElementById('pageSlider');
+        const viewModeButtonsContainer = document.getElementById('viewModeButtons');
+        const pageOrderButtonsContainer = document.getElementById('pageOrderButtons');
+        const autoPlayIntervalButtonsContainer = document.getElementById('autoPlayIntervalButtons');
+        const pageOrderControl = document.getElementById('pageOrderControl');
+        const pageInfoDisplay = document.getElementById('pageInfo');
+        const navigationControls = document.getElementById('navigationControls');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const noImagesMessage = document.getElementById('noImagesMessage');
+        const initialMessage = document.getElementById('initialMessage');
+        const resetButton = document.getElementById('resetButton');
+        const fullscreenButton = document.getElementById('fullscreenButton');
+        const autoPlayButton = document.getElementById('autoPlayButton');
+        const helpButton = document.getElementById('helpButton');
+        const fileTreeSidebar = document.getElementById('fileTreeSidebar');
+        const treeInitialMessage = document.getElementById('treeInitialMessage');
+        const resizeHandle = document.getElementById('resizeHandle');
+        const progressBarContainer = document.getElementById('progressBarContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+
+        // ===== State Management =====
+        const viewerState = {
+            images: [],
+            imageNames: [],
+            currentPageIndex: 0,
+            isDoublePageView: false,
+            doublePageStartsWith: 'left',
+            autoPlayIntervalId: null,
+            isAutoPlaying: false,
+            autoPlayDelay: DEFAULT_AUTOPLAY_DELAY,
+            preloadedImages: new Map(),
+            clickTimer: null
+        };
+
+        // Legacy variable references (for backward compatibility)
+        let images = viewerState.images;
+        let imageNames = viewerState.imageNames;
+        let currentPageIndex = viewerState.currentPageIndex;
+        let isDoublePageView = viewerState.isDoublePageView;
+        let doublePageStartsWith = viewerState.doublePageStartsWith;
+        let autoPlayIntervalId = viewerState.autoPlayIntervalId;
+        let isAutoPlaying = viewerState.isAutoPlaying;
+        let autoPlayDelay = viewerState.autoPlayDelay;
+        let preloadedImages = viewerState.preloadedImages;
+
+        // --- Settings Management ---
+        /**
+         * Save current viewer settings to localStorage
+         */
+        function saveSettings() {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+                viewMode: isDoublePageView ? 'double' : 'single',
+                pageOrder: doublePageStartsWith,
+                autoPlayInterval: autoPlayDelay,
+            }));
+        }
+
+        function loadSettings() {
+            const savedSettings = localStorage.getItem(SETTINGS_KEY);
+            if (!savedSettings) return;
+            try {
+                const settings = JSON.parse(savedSettings);
+                isDoublePageView = settings.viewMode === 'double';
+                doublePageStartsWith = settings.pageOrder || 'left';
+                autoPlayDelay = settings.autoPlayInterval || DEFAULT_AUTOPLAY_DELAY;
+            } catch (e) { console.error("Failed to parse settings", e); }
+            
+            // ▼▼▼ 追加箇所 (リサイズ) ▼▼▼
+            const savedWidth = localStorage.getItem(TREE_WIDTH_KEY);
+            if (savedWidth) {
+                fileTreeSidebar.style.flexBasis = `${savedWidth}px`;
+            }
+            // ▲▲▲ 追加箇所 (リサイズ) ▲▲▲
+        }
+        
+        // --- Viewer State Management ---
+        function setActiveButton(container, value) {
+            container.querySelectorAll('button').forEach(button => {
+                button.classList.toggle('active', button.dataset.value === value.toString());
+            });
+        }
+        
+        function clearViewer() {
+            stopAutoPlay();
+
+            // Enhanced memory cleanup
+            if (images.length > 0) {
+                // Revoke all object URLs to free memory
+                images.forEach(url => {
+                    try {
+                        URL.revokeObjectURL(url);
+                    } catch (e) {
+                        console.warn("Failed to revoke URL:", url, e);
+                    }
+                });
+            }
+
+            // Clear image container and remove all img elements
+            const imgElements = imageContainer.querySelectorAll('img');
+            imgElements.forEach(img => {
+                img.src = '';  // Clear src to free memory
+                img.remove();
+            });
+            imageContainer.innerHTML = '';
+
+            // Reset state
+            images = [];
+            imageNames = [];
+            currentPageIndex = 0;
+            preloadedImages.clear();  // Clear preload cache
+
+            // Update UI
+            initialMessage.classList.remove('hidden');
+            initialMessage.textContent = "左のツリーからフォルダ/ZIPを選択するか、右のパネルからファイルを開いてください。";
+            loadingMessage.classList.add('hidden');
+            noImagesMessage.classList.add('hidden');
+            imageContainer.classList.add('hidden');
+            navigationControls.classList.add('hidden');
+
+            pageSlider.value = 0;
+            pageSlider.max = 0;
+            disableControls(true);
+
+            const activeEl = fileTreeSidebar.querySelector('.tree-item.active-viewer');
+            if(activeEl) activeEl.classList.remove('active-viewer');
+        }
+
+        resetButton.addEventListener('click', clearViewer);
+        helpButton.addEventListener('click', showKeyboardHelp);
+
+        // --- Helper Functions ---
+        /**
+         * Format bytes to human-readable file size
+         * @param {number} bytes - File size in bytes
+         * @returns {string} Formatted file size (e.g., "15.2 MB")
+         */
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        /**
+         * Check if file size is within acceptable limits
+         * @param {File} file - File to check
+         * @param {number} maxSize - Maximum allowed size in bytes
+         * @param {number} warningSize - Size threshold for warning in bytes
+         * @returns {boolean} True if file should be processed, false otherwise
+         */
+        function checkFileSize(file, maxSize, warningSize) {
+            if (file.size > maxSize) {
+                handleLoadingError(`ファイルが大きすぎます。最大サイズ: ${formatFileSize(maxSize)}`);
+                return false;
+            }
+            if (file.size > warningSize) {
+                const proceed = confirm(
+                    `ファイルサイズが大きいです (${formatFileSize(file.size)})。\n` +
+                    `読み込みに時間がかかる場合があります。続行しますか？`
+                );
+                return proceed;
+            }
+            return true;
+        }
+
+        /**
+         * Debounce function for performance optimization
+         * Delays function execution until after wait milliseconds have elapsed since last call
+         * @param {Function} func - Function to debounce
+         * @param {number} wait - Delay in milliseconds
+         * @returns {Function} Debounced function
+         */
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        /**
+         * Throttle function for high-frequency events
+         * Ensures function is called at most once per limit milliseconds
+         * @param {Function} func - Function to throttle
+         * @param {number} limit - Minimum time between calls in milliseconds
+         * @returns {Function} Throttled function
+         */
+        function throttle(func, limit) {
+            let inThrottle;
+            return function(...args) {
+                if (!inThrottle) {
+                    func.apply(this, args);
+                    inThrottle = true;
+                    setTimeout(() => inThrottle = false, limit);
+                }
+            };
+        }
+
+        /**
+         * Process and finalize image files
+         * @param {File[]} files - Array of image files
+         * @returns {Object} Object with loadedImages and loadedImageNames arrays
+         */
+        function processImageFiles(files) {
+            const sortedFiles = files.sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+            );
+
+            return {
+                loadedImageNames: sortedFiles.map(file => file.name),
+                loadedImages: sortedFiles.map(file => URL.createObjectURL(file))
+            };
+        }
+
+        /**
+         * Image preloading for better performance
+         * Preloads adjacent pages for smooth navigation
+         */
+        function preloadNextImages() {
+            if (images.length === 0) return;
+
+            const step = isDoublePageView ? 2 : 1;
+            const indicesToPreload = [];
+
+            // Preload next 2-4 images
+            for (let i = 1; i <= 2; i++) {
+                const nextIndex = currentPageIndex + (step * i);
+                if (nextIndex < images.length) {
+                    indicesToPreload.push(nextIndex);
+                    if (isDoublePageView && nextIndex + 1 < images.length) {
+                        indicesToPreload.push(nextIndex + 1);
+                    }
+                }
+            }
+
+            // Preload previous 1-2 images
+            for (let i = 1; i <= 1; i++) {
+                const prevIndex = currentPageIndex - (step * i);
+                if (prevIndex >= 0) {
+                    indicesToPreload.push(prevIndex);
+                    if (isDoublePageView && prevIndex + 1 < images.length) {
+                        indicesToPreload.push(prevIndex + 1);
+                    }
+                }
+            }
+
+            // Preload images that aren't already cached
+            indicesToPreload.forEach(index => {
+                if (!preloadedImages.has(index) && images[index]) {
+                    const img = new Image();
+                    img.src = images[index];
+                    preloadedImages.set(index, img);
+                }
+            });
+
+            // Clean up old preloaded images to save memory
+            const validIndices = new Set(indicesToPreload);
+            validIndices.add(currentPageIndex);
+            if (isDoublePageView && currentPageIndex + 1 < images.length) {
+                validIndices.add(currentPageIndex + 1);
+            }
+
+            preloadedImages.forEach((_, index) => {
+                if (!validIndices.has(index)) {
+                    preloadedImages.delete(index);
+                }
+            });
+        }
+
+        // --- File/Folder Loading ---
+        /**
+         * Load images from a directory handle (File System Access API)
+         * @param {FileSystemDirectoryHandle} dirHandle - Directory handle to load from
+         */
+        async function loadFromDirectoryHandle(dirHandle) {
+            clearViewer();
+            prepareForLoading();
+            
+            try {
+                let imageFiles = [];
+                for await (const entry of dirHandle.values()) {
+                    if (entry.kind === 'file' && IMAGE_EXTENSIONS_REGEX.test(entry.name)) {
+                        imageFiles.push(entry);
+                    }
+                }
+
+                imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+                const filePromises = imageFiles.map(handle => handle.getFile());
+                const files = await Promise.all(filePromises);
+
+                const loadedImageNames = files.map(file => file.name);
+                const loadedImages = files.map(file => URL.createObjectURL(file));
+
+                finalizeLoading(loadedImages, loadedImageNames);
+            } catch (error) {
+                console.error("Directory Handle Error:", error);
+                handleLoadingError("フォルダの読み込みに失敗しました。");
+            }
+        }
+        
+        /**
+         * Load images from a ZIP file
+         * @param {File} file - ZIP file to load
+         */
+        async function loadFromZipFile(file) {
+            // Check file size before processing
+            if (!checkFileSize(file, MAX_ZIP_SIZE, WARNING_ZIP_SIZE)) {
+                return;
+            }
+
+            clearViewer();
+            prepareForLoading(true);  // Show progress bar
+
+            try {
+                // Load ZIP with progress
+                updateProgress(10, 'ZIPファイルを読み込み中...');
+                const zip = await JSZip.loadAsync(file);
+
+                updateProgress(30, '画像を検索中...');
+                const tempImageFiles = [];
+                zip.forEach((_, zipEntry) => {
+                    if (!zipEntry.dir && IMAGE_EXTENSIONS_REGEX.test(zipEntry.name) && !zipEntry.name.startsWith('__MACOSX/')) {
+                         tempImageFiles.push({ name: zipEntry.name, entry: zipEntry });
+                    }
+                });
+
+                updateProgress(50, `${tempImageFiles.length}個の画像を発見...`);
+                tempImageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+                updateProgress(60, '画像を展開中...');
+                const loadedImageNames = tempImageFiles.map(f => f.name);
+
+                // Extract images with progress tracking
+                const loadedImages = [];
+                for (let i = 0; i < tempImageFiles.length; i++) {
+                    const blob = await tempImageFiles[i].entry.async('blob');
+                    loadedImages.push(URL.createObjectURL(blob));
+
+                    // Update progress every 10 images or at the end
+                    if (i % 10 === 0 || i === tempImageFiles.length - 1) {
+                        const percent = 60 + (40 * (i + 1) / tempImageFiles.length);
+                        updateProgress(percent, `画像を展開中... (${i + 1}/${tempImageFiles.length})`);
+                    }
+                }
+
+                hideProgress();
+                finalizeLoading(loadedImages, loadedImageNames);
+            } catch (error) {
+                console.error("ZIP Error:", error);
+                hideProgress();
+                handleLoadingError("ZIPファイルの処理に失敗しました。");
+            }
+        }
+
+        // --- Unified File/Folder Loading with Drag & Drop ---
+
+        /**
+         * Close and remove file selection modal
+         */
+        function closeFileSelectionModal() {
+            const existingModal = document.getElementById('fileSelectionModal');
+            if (existingModal) {
+                document.body.removeChild(existingModal);
+            }
+        }
+
+        // Unified open button handler
+        if (unifiedOpenButton) {
+            unifiedOpenButton.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                // Call the file selection modal
+                await showFileSelectionDialog();
+            });
+        } else {
+            console.error('unifiedOpenButton not found!');
+        }
+
+        /**
+         * Show file selection modal dialog
+         */
+        async function showFileSelectionDialog() {
+            // Remove any existing modal first
+            closeFileSelectionModal();
+
+            // Create modal dialog
+            const modal = document.createElement('div');
+            modal.id = 'fileSelectionModal';
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 10000;';
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = 'background: white; padding: 2rem; border-radius: 0.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px;';
+            dialog.innerHTML = `
+                <h3 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem; color: #374151;">ファイルタイプを選択</h3>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                    <button id="selectZipBtn" class="action-button primary" style="width: 100%;">ZIPファイルを選択</button>
+                    <button id="selectFolderBtn" class="action-button primary" style="width: 100%;">フォルダを選択</button>
+                    <button id="cancelBtn" class="action-button" style="width: 100%;">キャンセル</button>
+                </div>
+            `;
+
+            modal.appendChild(dialog);
+            document.body.appendChild(modal);
+
+            // Button handlers
+            dialog.querySelector('#selectZipBtn').addEventListener('click', () => {
+                window.addEventListener('focus', function closeModalOnFocus() {
+                    setTimeout(() => {
+                        closeFileSelectionModal();
+                        window.removeEventListener('focus', closeModalOnFocus);
+                    }, 300);
+                }, { once: true });
+
+                unifiedFileInput.click();
+            });
+
+            dialog.querySelector('#selectFolderBtn').addEventListener('click', () => {
+                window.addEventListener('focus', function closeModalOnFocus() {
+                    setTimeout(() => {
+                        closeFileSelectionModal();
+                        window.removeEventListener('focus', closeModalOnFocus);
+                    }, 300);
+                }, { once: true });
+
+                unifiedFolderInput.click();
+            });
+
+            dialog.querySelector('#cancelBtn').addEventListener('click', () => {
+                closeFileSelectionModal();
+            });
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeFileSelectionModal();
+                }
+            });
+
+            const escapeHandler = (e) => {
+                if (e.key === 'Escape') {
+                    closeFileSelectionModal();
+                    document.removeEventListener('keydown', escapeHandler);
+                }
+            };
+            document.addEventListener('keydown', escapeHandler);
+        }
+
+        // ZIP file input handler
+        unifiedFileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) {
+                loadFromZipFile(e.target.files[0]);
+            }
+            e.target.value = ''; // Reset for next selection
+        });
+
+        // Folder input handler
+        unifiedFolderInput.addEventListener('change', async (event) => {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+            clearViewer();
+            prepareForLoading();
+            try {
+                const imageFiles = Array.from(files)
+                    .filter(file => IMAGE_EXTENSIONS_REGEX.test(file.name))
+                    .sort((a, b) => (a.webkitRelativePath || a.name).localeCompare(b.webkitRelativePath || b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+                const loadedImageNames = imageFiles.map(file => file.webkitRelativePath || file.name);
+                const loadedImages = imageFiles.map(file => URL.createObjectURL(file));
+                finalizeLoading(loadedImages, loadedImageNames);
+            } catch (error) {
+                console.error("Folder Input Error:", error);
+                handleLoadingError("フォルダ処理中にエラーが発生しました。");
+            } finally {
+                event.target.value = '';
+            }
+        });
+
+        // Drag and drop handlers
+        if (dropZone) {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-500', 'bg-blue-100');
+            });
+
+            dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-500', 'bg-blue-100');
+            });
+
+            dropZone.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-500', 'bg-blue-100');
+
+            const items = e.dataTransfer.items;
+            if (!items || items.length === 0) return;
+
+            const item = items[0];
+
+            // Check if it's a file or folder
+            if (item.kind === 'file') {
+                const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+
+                if (entry) {
+                    if (entry.isDirectory) {
+                        // Handle folder drop
+                        await loadFromDroppedFolder(entry);
+                    } else if (entry.isFile && ZIP_EXTENSION_REGEX.test(entry.name)) {
+                        // Handle ZIP file drop
+                        const file = item.getAsFile();
+                        if (file) loadFromZipFile(file);
+                    } else {
+                        handleLoadingError("ZIPファイルまたはフォルダをドロップしてください。");
+                    }
+                } else {
+                    // Fallback for browsers without webkitGetAsEntry
+                    const file = item.getAsFile();
+                    if (file && ZIP_EXTENSION_REGEX.test(file.name)) {
+                        loadFromZipFile(file);
+                    } else {
+                        handleLoadingError("ZIPファイルをドロップしてください。");
+                    }
+                }
+            }
+            });
+        } else {
+            console.error('dropZone not found!');
+        }
+
+        // Load from dropped folder using FileSystemEntry API
+        async function loadFromDroppedFolder(dirEntry) {
+            clearViewer();
+            prepareForLoading();
+
+            try {
+                const imageFiles = [];
+
+                async function readDirectory(dirEntry) {
+                    const reader = dirEntry.createReader();
+                    let entries = [];
+
+                    // readEntries may need to be called multiple times for large directories
+                    async function readEntriesBatch() {
+                        return new Promise((resolve, reject) => {
+                            reader.readEntries(resolve, reject);
+                        });
+                    }
+
+                    // Keep reading until we get an empty array
+                    let batch;
+                    do {
+                        batch = await readEntriesBatch();
+                        entries = entries.concat(batch);
+                    } while (batch.length > 0);
+
+                    for (const entry of entries) {
+                        if (entry.isFile && IMAGE_EXTENSIONS_REGEX.test(entry.name)) {
+                            const file = await new Promise((resolve, reject) => {
+                                entry.file(resolve, reject);
+                            });
+                            imageFiles.push(file);
+                        } else if (entry.isDirectory) {
+                            await readDirectory(entry);
+                        }
+                    }
+                }
+
+                await readDirectory(dirEntry);
+
+                if (imageFiles.length === 0) {
+                    handleLoadingError("画像が見つかりません。(jpg, png, gif, webp)");
+                    return;
+                }
+
+                imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+                const loadedImageNames = imageFiles.map(file => file.name);
+                const loadedImages = imageFiles.map(file => URL.createObjectURL(file));
+
+                finalizeLoading(loadedImages, loadedImageNames);
+            } catch (error) {
+                console.error("Dropped Folder Error:", error);
+                handleLoadingError("フォルダの読み込みに失敗しました。");
+            }
+        }
+
+        /**
+         * Update progress bar
+         * @param {number} percent - Progress percentage (0-100)
+         * @param {string} text - Progress text
+         */
+        function updateProgress(percent, text) {
+            progressBarContainer.classList.remove('hidden');
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = text || `${Math.round(percent)}%`;
+        }
+
+        /**
+         * Hide progress bar
+         */
+        function hideProgress() {
+            progressBarContainer.classList.add('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = '';
+        }
+
+        /**
+         * Prepare UI for loading state
+         * @param {boolean} showProgress - Whether to show progress bar
+         */
+        function prepareForLoading(showProgress = false) {
+            initialMessage.classList.add('hidden');
+            loadingMessage.classList.remove('hidden');
+            noImagesMessage.classList.add('hidden');
+            disableControls(true);
+            if (showProgress) {
+                updateProgress(0, '準備中...');
+            } else {
+                hideProgress();
+            }
+        }
+
+        /**
+         * Finalize loading with images and display them
+         * @param {string[]} loadedImages - Array of image URLs
+         * @param {string[]} loadedImageNames - Array of image names
+         */
+        function finalizeLoading(loadedImages, loadedImageNames) {
+            loadingMessage.classList.add('hidden');
+            if (loadedImages.length > 0) {
+                images = loadedImages;
+                imageNames = loadedImageNames;
+                imageContainer.classList.remove('hidden');
+                navigationControls.classList.remove('hidden');
+                currentPageIndex = 0;
+                renderImages();
+                disableControls(false);
+            } else {
+                noImagesMessage.classList.remove('hidden');
+                disableControls(true);
+            }
+        }
+
+        function handleLoadingError(message) {
+            loadingMessage.classList.add('hidden');
+            noImagesMessage.textContent = message;
+            noImagesMessage.classList.remove('hidden');
+        }
+
+        // --- File System Browser Tree ---
+        browseFileSystemButton.addEventListener('click', async () => {
+            try {
+                const dirHandle = await window.showDirectoryPicker();
+                treeInitialMessage.classList.add('hidden');
+                fileTreeSidebar.innerHTML = '<div class="text-sm p-2">ツリー構築中...</div>';
+                const tree = await buildFileTreeFromHandle(dirHandle);
+                renderFileTree(tree, dirHandle.name);
+            } catch (err) {
+                console.log("User cancelled directory picker or an error occurred:", err);
+                if(fileTreeSidebar.querySelector('.tree') === null) {
+                    treeInitialMessage.classList.remove('hidden');
+                }
+            }
+        });
+
+        async function buildFileTreeFromHandle(dirHandle) {
+            const tree = [];
+            for await (const entry of dirHandle.values()) {
+                if (entry.kind === 'directory') {
+                    tree.push({ name: entry.name, type: 'folder', handle: entry });
+                } else if (ZIP_EXTENSION_REGEX.test(entry.name)) {
+                    tree.push({ name: entry.name, type: 'zip', handle: entry });
+                }
+            }
+            tree.sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+            return tree;
+        }
+
+        function renderFileTree(tree, rootName) {
+            const treeContainer = document.createElement('div');
+            treeContainer.className = 'tree';
+            
+            const rootLi = document.createElement('li');
+            rootLi.className = 'tree-folder open'; // Start with root open
+            
+            const rootItemDiv = document.createElement('div');
+            rootItemDiv.className = 'tree-item';
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'icon';
+            const nameStrong = document.createElement('strong');
+            nameStrong.textContent = rootName;  // Safe: uses textContent instead of innerHTML
+            rootItemDiv.appendChild(iconSpan);
+            rootItemDiv.appendChild(nameStrong);
+            rootItemDiv.addEventListener('click', () => rootLi.classList.toggle('open'));
+            
+            const rootUl = document.createElement('ul');
+            tree.forEach(node => rootUl.appendChild(createTreeNode(node)));
+            
+            rootLi.appendChild(rootItemDiv);
+            rootLi.appendChild(rootUl);
+            treeContainer.appendChild(rootLi);
+            
+            fileTreeSidebar.innerHTML = '';
+            fileTreeSidebar.appendChild(treeContainer);
+        }
+
+        function createTreeNode(node) {
+            const li = document.createElement('li');
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'tree-item';
+            
+            if (node.type === 'folder') {
+                li.className = 'tree-folder';
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'icon';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = node.name;  // Safe: uses textContent
+                itemDiv.appendChild(iconSpan);
+                itemDiv.appendChild(nameSpan);
+                let isLoaded = false;
+                itemDiv.addEventListener('click', async (e) => {
+                    e.stopPropagation(); // Prevent parent folders from toggling
+                    
+                    if (!isLoaded && !li.classList.contains('open')) {
+                        const subTree = await buildFileTreeFromHandle(node.handle);
+                        if (subTree.length > 0) {
+                            const ul = document.createElement('ul');
+                            subTree.forEach(child => ul.appendChild(createTreeNode(child)));
+                            li.appendChild(ul);
+                        }
+                        isLoaded = true;
+                    }
+                    li.classList.toggle('open');
+                    loadFromDirectoryHandle(node.handle);
+
+                    document.querySelectorAll('.tree-item.active-viewer').forEach(el => el.classList.remove('active-viewer'));
+                    itemDiv.classList.add('active-viewer');
+                });
+            } else { // zip file
+                li.className = 'tree-zip';
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'icon';
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = node.name;  // Safe: uses textContent
+                itemDiv.appendChild(iconSpan);
+                itemDiv.appendChild(nameSpan);
+                itemDiv.addEventListener('click', async (e) => {
+                     e.stopPropagation();
+                     const file = await node.handle.getFile();
+                     loadFromZipFile(file);
+                     document.querySelectorAll('.tree-item.active-viewer').forEach(el => el.classList.remove('active-viewer'));
+                     itemDiv.classList.add('active-viewer');
+                });
+            }
+            li.appendChild(itemDiv);
+            return li;
+        }
+
+        // --- Image Rendering & Navigation ---
+        viewModeButtonsContainer.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'BUTTON') return;
+            isDoublePageView = e.target.dataset.value === 'double';
+            imageContainer.classList.toggle('double-page', isDoublePageView);
+            pageOrderControl.classList.toggle('hidden', !isDoublePageView);
+            if (isDoublePageView && currentPageIndex % 2 !== 0) currentPageIndex--;
+            setActiveButton(viewModeButtonsContainer, e.target.dataset.value);
+            saveSettings();
+            renderImages();
+        });
+        pageOrderButtonsContainer.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'BUTTON') return;
+            doublePageStartsWith = e.target.dataset.value;
+            setActiveButton(pageOrderButtonsContainer, doublePageStartsWith);
+            saveSettings();
+            renderImages();
+        });
+        autoPlayIntervalButtonsContainer.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'BUTTON') return;
+            autoPlayDelay = parseInt(e.target.dataset.value, 10);
+            setActiveButton(autoPlayIntervalButtonsContainer, autoPlayDelay);
+            saveSettings();
+            if (isAutoPlaying) { stopAutoPlay(); startAutoPlay(); }
+        });
+
+        function goToPrevPage() {
+            if (currentPageIndex === 0) return;
+            const step = isDoublePageView ? 2 : 1;
+            currentPageIndex = Math.max(0, currentPageIndex - step);
+            renderImages();
+        }
+        function goToNextPage() {
+            const step = isDoublePageView ? 2 : 1;
+            if (currentPageIndex >= images.length - step) {
+                if(isAutoPlaying) stopAutoPlay();
+                return;
+            }
+            currentPageIndex = Math.min(images.length - 1, currentPageIndex + step);
+            renderImages();
+        }
+        function stepPage(step) {
+            const newIndex = Math.max(0, Math.min(currentPageIndex + step, images.length - 1));
+            if (currentPageIndex !== newIndex) {
+                currentPageIndex = newIndex;
+                renderImages();
+            }
+        }
+
+        prevButton.addEventListener('click', () => (isDoublePageView && doublePageStartsWith === 'right') ? goToNextPage() : goToPrevPage());
+        nextButton.addEventListener('click', () => (isDoublePageView && doublePageStartsWith === 'right') ? goToPrevPage() : goToNextPage());
+
+        pageSlider.addEventListener('input', () => {
+            stopAutoPlay();
+            let newIndex = parseInt(pageSlider.value, 10);
+            if (isDoublePageView && doublePageStartsWith === 'right') {
+                newIndex = parseInt(pageSlider.max, 10) - newIndex;
+            }
+            currentPageIndex = newIndex;
+            renderImages();
+        });
+
+        function renderImages() {
+            if (images.length === 0) return;
+            imageContainer.innerHTML = '';
+            
+            if (isDoublePageView) {
+                const p1Idx = currentPageIndex;
+                const p2Idx = currentPageIndex + 1;
+                const indices = (doublePageStartsWith === 'left') ? [p1Idx, p2Idx] : [p2Idx, p1Idx];
+                
+                indices.forEach(idx => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'image-wrapper';
+                    if (idx < images.length) {
+                        const img = document.createElement('img');
+                        img.src = images[idx];
+                        img.alt = `Page ${idx + 1}`;
+                        img.title = imageNames[idx] || img.alt;
+                        wrapper.appendChild(img);
+                    }
+                    imageContainer.appendChild(wrapper);
+                });
+            } else {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'image-wrapper';
+                if (currentPageIndex < images.length) {
+                    const img = document.createElement('img');
+                    img.src = images[currentPageIndex];
+                    img.alt = `Page ${currentPageIndex + 1}`;
+                    img.title = imageNames[currentPageIndex] || img.alt;
+                    wrapper.appendChild(img);
+                }
+                imageContainer.appendChild(wrapper);
+            }
+            updatePageInfo();
+            updateNavButtons();
+
+            let sliderValue = currentPageIndex;
+            if (isDoublePageView && doublePageStartsWith === 'right') {
+                sliderValue = parseInt(pageSlider.max || 0, 10) - currentPageIndex;
+            }
+            pageSlider.value = sliderValue;
+
+            // Preload adjacent images for smooth navigation
+            if (typeof requestIdleCallback !== 'undefined') {
+                requestIdleCallback(() => preloadNextImages(), { timeout: 1000 });
+            } else {
+                setTimeout(() => preloadNextImages(), 100);
+            }
+        }
+
+        // --- Keyboard & Fullscreen ---
+        /**
+         * Enhanced keyboard shortcuts handler
+         */
+        document.addEventListener('keydown', (e) => {
+            // Ignore if typing in input field
+            if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+
+            // Prevent default for navigation keys
+            if ([KEYBOARD_SHORTCUTS.PREV_PAGE, KEYBOARD_SHORTCUTS.NEXT_PAGE,
+                 KEYBOARD_SHORTCUTS.FIRST_PAGE, KEYBOARD_SHORTCUTS.LAST_PAGE].includes(e.key)) {
+                e.preventDefault();
+            }
+
+            // Show help modal
+            if (e.key === KEYBOARD_SHORTCUTS.HELP) {
+                e.preventDefault();
+                showKeyboardHelp();
+                return;
+            }
+
+            // Global shortcuts (work even without images loaded)
+            if (e.key.toLowerCase() === KEYBOARD_SHORTCUTS.RESET) {
+                e.preventDefault();
+                if (confirm('ビューアーをリセットしますか？')) clearViewer();
+                return;
+            }
+
+            // Image navigation shortcuts (require images loaded)
+            if (images.length === 0) return;
+
+            const rightBinding = (isDoublePageView && doublePageStartsWith === 'right');
+
+            // Navigation
+            if (e.key === KEYBOARD_SHORTCUTS.PREV_PAGE) {
+                e.shiftKey ? stepPage(rightBinding ? 1 : -1) : (rightBinding ? goToNextPage() : goToPrevPage());
+            }
+            else if (e.key === KEYBOARD_SHORTCUTS.NEXT_PAGE) {
+                e.shiftKey ? stepPage(rightBinding ? -1 : 1) : (rightBinding ? goToPrevPage() : goToNextPage());
+            }
+            else if (e.key === KEYBOARD_SHORTCUTS.FIRST_PAGE) {
+                currentPageIndex = 0;
+                renderImages();
+            }
+            else if (e.key === KEYBOARD_SHORTCUTS.LAST_PAGE) {
+                currentPageIndex = Math.max(0, images.length - (isDoublePageView ? 2 : 1));
+                renderImages();
+            }
+            // View mode switching
+            else if (e.key === KEYBOARD_SHORTCUTS.SINGLE_VIEW) {
+                isDoublePageView = false;
+                imageContainer.classList.remove('double-page');
+                pageOrderControl.classList.add('hidden');
+                setActiveButton(viewModeButtonsContainer, 'single');
+                saveSettings();
+                renderImages();
+            }
+            else if (e.key === KEYBOARD_SHORTCUTS.DOUBLE_VIEW) {
+                isDoublePageView = true;
+                imageContainer.classList.add('double-page');
+                pageOrderControl.classList.remove('hidden');
+                if (currentPageIndex % 2 !== 0) currentPageIndex--;
+                setActiveButton(viewModeButtonsContainer, 'double');
+                saveSettings();
+                renderImages();
+            }
+            // Autoplay toggle
+            else if (e.key === KEYBOARD_SHORTCUTS.AUTOPLAY) {
+                e.preventDefault();
+                if (isAutoPlaying) stopAutoPlay();
+                else startAutoPlay();
+            }
+            // Fullscreen
+            else if (e.key.toLowerCase() === KEYBOARD_SHORTCUTS.FULLSCREEN) {
+                toggleFullscreen();
+            }
+            else if (e.key === KEYBOARD_SHORTCUTS.ESCAPE && document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+        });
+        
+        imageContainerHost.addEventListener('dblclick', (event) => {
+    clearTimeout(clickTimer); // ← シングルクリック処理をキャンセル
+    toggleFullscreen();
+});
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) imageContainerHost.requestFullscreen().catch(console.error);
+            else document.exitFullscreen();
+        }
+
+        /**
+         * Show keyboard shortcuts help modal
+         */
+        function showKeyboardHelp() {
+            const modal = document.createElement('div');
+            modal.id = 'keyboardHelpModal';
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 10000;';
+
+            const dialog = document.createElement('div');
+            dialog.style.cssText = 'background: white; padding: 2rem; border-radius: 0.5rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 600px; max-height: 80vh; overflow-y: auto;';
+
+            const title = document.createElement('h2');
+            title.textContent = 'キーボードショートカット';
+            title.style.cssText = 'font-size: 1.5rem; font-weight: bold; margin-bottom: 1.5rem; color: #374151;';
+
+            const shortcuts = [
+                { category: 'ナビゲーション', items: [
+                    { key: '← / →', desc: 'ページ移動' },
+                    { key: 'Shift + ← / →', desc: '1枚ずつ移動' },
+                    { key: 'Home', desc: '最初のページへ' },
+                    { key: 'End', desc: '最後のページへ' }
+                ]},
+                { category: '表示モード', items: [
+                    { key: '1', desc: '単一ページ表示' },
+                    { key: '2', desc: '見開き表示' },
+                    { key: 'F', desc: 'フルスクリーン切替' },
+                    { key: 'Esc', desc: 'フルスクリーン解除' }
+                ]},
+                { category: '操作', items: [
+                    { key: 'Space', desc: '自動再生の開始/停止' },
+                    { key: 'R', desc: 'ビューアーをリセット' },
+                    { key: '?', desc: 'このヘルプを表示' }
+                ]}
+            ];
+
+            shortcuts.forEach(section => {
+                const categoryTitle = document.createElement('h3');
+                categoryTitle.textContent = section.category;
+                categoryTitle.style.cssText = 'font-size: 1.125rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.75rem; color: #1f2937;';
+                dialog.appendChild(categoryTitle);
+
+                const table = document.createElement('table');
+                table.style.cssText = 'width: 100%; border-collapse: collapse; margin-bottom: 1rem;';
+
+                section.items.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.style.cssText = 'border-bottom: 1px solid #e5e7eb;';
+
+                    const keyCell = document.createElement('td');
+                    keyCell.textContent = item.key;
+                    keyCell.style.cssText = 'padding: 0.5rem; font-weight: 600; font-family: monospace; background: #f3f4f6; border-radius: 0.25rem; width: 30%;';
+
+                    const descCell = document.createElement('td');
+                    descCell.textContent = item.desc;
+                    descCell.style.cssText = 'padding: 0.5rem; padding-left: 1rem;';
+
+                    row.appendChild(keyCell);
+                    row.appendChild(descCell);
+                    table.appendChild(row);
+                });
+
+                dialog.appendChild(table);
+            });
+
+            const closeButton = document.createElement('button');
+            closeButton.textContent = '閉じる';
+            closeButton.className = 'action-button primary';
+            closeButton.style.cssText = 'width: 100%; margin-top: 1rem;';
+            closeButton.addEventListener('click', () => document.body.removeChild(modal));
+
+            dialog.insertBefore(title, dialog.firstChild);
+            dialog.appendChild(closeButton);
+            modal.appendChild(dialog);
+
+            // Close on click outside or Escape
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) document.body.removeChild(modal);
+            });
+            document.addEventListener('keydown', function escHandler(e) {
+                if (e.key === 'Escape' && document.getElementById('keyboardHelpModal')) {
+                    document.body.removeChild(modal);
+                    document.removeEventListener('keydown', escHandler);
+                }
+            });
+
+            document.body.appendChild(modal);
+        }
+        document.addEventListener('fullscreenchange', () => {
+            const isFs = !!document.fullscreenElement;
+            imageContainerHost.classList.toggle('fullscreen', isFs);
+            imageContainer.classList.toggle('fullscreen', isFs);
+            renderImages();
+        });
+        
+        // --- Sidebar Resizing ---
+        // ▼▼▼ 追加箇所 (リサイズ) ▼▼▼
+        resizeHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            document.body.classList.add('resizing');
+            
+            const handleMouseMove = (moveEvent) => {
+                const newWidth = moveEvent.clientX;
+                if (newWidth > TREE_MIN_WIDTH && newWidth < TREE_MAX_WIDTH) {
+                    fileTreeSidebar.style.flexBasis = `${newWidth}px`;
+                }
+            };
+
+            const handleMouseUp = () => {
+                document.body.classList.remove('resizing');
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+                // Save the new width
+                localStorage.setItem(TREE_WIDTH_KEY, fileTreeSidebar.offsetWidth);
+            };
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        });
+        // ▲▲▲ 追加箇所 (リサイズ) ▲▲▲
+
+        // --- Initial Load ---
+        loadSettings();
+        setActiveButton(viewModeButtonsContainer, isDoublePageView ? 'double' : 'single');
+        imageContainer.classList.toggle('double-page', isDoublePageView);
+        pageOrderControl.classList.toggle('hidden', !isDoublePageView);
+        setActiveButton(pageOrderButtonsContainer, doublePageStartsWith);
+        setActiveButton(autoPlayIntervalButtonsContainer, autoPlayDelay);
+        clearViewer();
+
+
+        // -- Unchanged functions (to be copied from previous version) --
+        function updatePageInfo() {
+            if (images.length === 0) { pageInfoDisplay.textContent = 'ページ情報なし'; return; }
+            let infoText = '';
+            if (isDoublePageView) {
+                let p1Text = '-', p2Text = '-';
+                const p1Idx = currentPageIndex;
+                const p2Idx = currentPageIndex + 1;
+                const indices = (doublePageStartsWith === 'left') ? [p1Idx, p2Idx] : [p2Idx, p1Idx];
+
+                if(indices[0] < images.length) p1Text = (indices[0] + 1).toString();
+                if(indices[1] < images.length) p2Text = (indices[1] + 1).toString();
+                infoText = `ページ: ${p1Text} | ${p2Text}`;
+            } else {
+                infoText = `ページ: ${currentPageIndex + 1}`;
+            }
+            pageInfoDisplay.textContent = `${infoText} / ${images.length}`;
+        }
+
+        function updateNavButtons() {
+            if (images.length === 0) {
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+                pageSlider.disabled = true;
+                pageSlider.max = 0;
+                pageSlider.value = 0;
+                return;
+            }
+            pageSlider.disabled = false;
+            pageSlider.max = images.length > 0 ? images.length - 1 : 0;
+
+            const step = isDoublePageView ? 2 : 1;
+            const hasPrevPage = currentPageIndex > 0;
+            const hasNextPage = currentPageIndex < images.length - step;
+            
+            if (isDoublePageView && doublePageStartsWith === 'right') {
+                prevButton.disabled = !hasNextPage;
+                nextButton.disabled = !hasPrevPage;
+                prevButton.innerHTML = '&lt; 次へ';
+                nextButton.innerHTML = '前へ &gt;';
+            } else {
+                prevButton.disabled = !hasPrevPage;
+                nextButton.disabled = !hasNextPage;
+                prevButton.innerHTML = '&lt; 前へ';
+                nextButton.innerHTML = '次へ &gt;';
+            }
+        }
+
+        function startAutoPlay() {
+            if (images.length === 0 || nextButton.disabled) { updateAutoPlayButtonState(); return; }
+            let isAutoPlayingCall = false; // local scope for safety
+            isAutoPlaying = true;
+            updateAutoPlayButtonState();
+            isAutoPlayingCall = true;
+            goToNextPage();
+            autoPlayIntervalId = setInterval(() => {
+                isAutoPlayingCall = true;
+                goToNextPage();
+                if (nextButton.disabled && isAutoPlaying) stopAutoPlay();
+            }, autoPlayDelay);
+        }
+        function stopAutoPlay() {
+            clearInterval(autoPlayIntervalId);
+            autoPlayIntervalId = null;
+            isAutoPlaying = false;
+            updateAutoPlayButtonState();
+        }
+        function updateAutoPlayButtonState() {
+            const textSpan = autoPlayButton.querySelector('span.button-text');
+            const icon = autoPlayButton.querySelector('svg');
+            if (isAutoPlaying) {
+                textSpan.textContent = '停止';
+                icon.innerHTML = `<path d="M5.5 5.5A.5.5 0 0 1 6 6v4a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm4 0a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5z"/>`;
+                autoPlayButton.classList.add('active');
+            } else {
+                textSpan.textContent = '自動再生';
+                icon.innerHTML = `<path d="m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393z"/>`;
+                autoPlayButton.classList.remove('active');
+            }
+            autoPlayButton.disabled = images.length === 0 || (nextButton.disabled && !isAutoPlaying);
+            autoPlayIntervalButtonsContainer.querySelectorAll('button').forEach(btn => btn.disabled = images.length === 0 || isAutoPlaying);
+        }
+        autoPlayButton.addEventListener('click', () => { if (isAutoPlaying) stopAutoPlay(); else startAutoPlay(); });
+        fullscreenButton.addEventListener('click', toggleFullscreen);  
+
+        function disableControls(disabled) {
+            const elements = [
+                ...viewModeButtonsContainer.querySelectorAll('button'), fullscreenButton, pageSlider, 
+                prevButton, nextButton, autoPlayButton, ...autoPlayIntervalButtonsContainer.querySelectorAll('button')
+            ];
+            elements.forEach(el => { if (el) el.disabled = disabled; });
+            
+            pageOrderButtonsContainer.querySelectorAll('button').forEach(btn => btn.disabled = disabled || !isDoublePageView);
+
+            if (disabled) {
+                if (pageSlider) { pageSlider.value = 0; pageSlider.max = 0; }
+            } else {
+                updateNavButtons();
+                updateAutoPlayButtonState();
+            }
+        }
+        
+        let clickTimer = null;
+        imageContainerHost.addEventListener('click', (event) => {
+            if (images.length === 0) return;
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                const rightBinding = isDoublePageView && doublePageStartsWith === 'right';
+                const isLeftClick = event.clientX < imageContainerHost.getBoundingClientRect().left + imageContainerHost.offsetWidth / 2;
+                if (isLeftClick) { rightBinding ? goToNextPage() : goToPrevPage(); }
+                else { rightBinding ? goToPrevPage() : goToNextPage(); }
+            }, CLICK_DELAY_MS);
+        });
+
+        // Improved wheel event with throttle
+        const handleWheel = throttle((event) => {
+            if (images.length === 0) return;
+            const rightBinding = isDoublePageView && doublePageStartsWith === 'right';
+            if (event.deltaY > 0) { rightBinding ? goToPrevPage() : goToNextPage(); }
+            else { rightBinding ? goToNextPage() : goToPrevPage(); }
+        }, WHEEL_DEBOUNCE_MS);
+
+        imageContainerHost.addEventListener('wheel', handleWheel);
+
+    </script>
+</body>
+</html>
