@@ -8,14 +8,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-gray-200 text-gray-800 p-0 md:p-4 h-screen flex flex-col overflow-hidden">
+<body class="bg-[#ECEAE4] text-[#2D2B29] p-0 md:p-4 h-screen flex flex-col overflow-hidden selection:bg-[#D97757] selection:text-white">
 
-    <div class="w-full h-full bg-white md:rounded-lg md:shadow-lg flex flex-col md:flex-row overflow-hidden">
+    <div class="w-full h-full bg-[#FCFBFA] md:rounded-xl md:shadow-sm md:border border-[#E5E2D9] flex flex-col md:flex-row overflow-hidden">
         
-        <div id="sidebarPanel" class="hidden md:flex flex-col bg-gray-50 border-r w-72 flex-shrink-0 h-full">
-            <div class="p-3 border-b text-sm font-bold text-gray-600">フォルダ/ZIP</div>
+        <div id="sidebarPanel" class="hidden md:flex flex-col bg-[#F5F4F1] border-r border-[#E5E2D9] w-72 flex-shrink-0 h-full">
+            <div class="p-3 border-b border-[#E5E2D9] text-sm font-bold text-[#5C5954] font-serif tracking-wide">フォルダ/ZIP</div>
             <div id="treeContainer" class="flex-grow overflow-y-auto p-2 text-sm">
-                <div class="text-gray-400 text-center mt-4 text-xs">
+                <div class="text-[#9B968C] text-center mt-4 text-xs">
                     「起点フォルダを選択」<br>から開始してください
                 </div>
             </div>
@@ -23,28 +23,28 @@
 
         <div id="resizeHandle" class="hidden md:block"></div>
 
-        <div id="mainArea" class="flex-grow flex flex-col min-w-0 bg-white relative">
-            <div id="imageContainerHost" class="flex-grow relative bg-gray-100 overflow-hidden flex items-center justify-center">
-                <div id="placeholder" class="text-center text-gray-400 pointer-events-none z-0">
+        <div id="mainArea" class="flex-grow flex flex-col min-w-0 bg-[#FCFBFA] relative">
+            <div id="imageContainerHost" class="flex-grow relative bg-[#F0EFEA] overflow-hidden flex items-center justify-center">
+                <div id="placeholder" class="text-center text-[#9B968C] pointer-events-none z-0">
                     <div class="text-4xl mb-2">📂</div>
                     <div>ZIPまたはフォルダをドロップ</div>
                 </div>
                 
-                <div id="loader" class="hidden absolute inset-0 bg-white/90 z-20 flex flex-col items-center justify-center">
-                    <div class="w-64 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div id="progressBar" class="h-full bg-blue-500 w-0 transition-all duration-200"></div>
+                <div id="loader" class="hidden absolute inset-0 bg-[#FCFBFA]/90 z-20 flex flex-col items-center justify-center">
+                    <div class="w-64 h-2 bg-[#E5E2D9] rounded-full overflow-hidden">
+                        <div id="progressBar" class="h-full bg-[#D97757] w-0 transition-all duration-200"></div>
                     </div>
-                    <div id="loaderText" class="mt-2 text-sm text-gray-600">Loading...</div>
+                    <div id="loaderText" class="mt-2 text-sm text-[#5C5954] font-serif italic">Loading...</div>
                 </div>
 
                 <div id="imageContainer" class="image-container hidden z-10"></div>
             </div>
 
-            <div id="navBar" class="hidden p-3 border-t bg-white flex items-center gap-4 flex-shrink-0 z-10">
+            <div id="navBar" class="hidden p-3 border-t border-[#E5E2D9] bg-[#FCFBFA] flex items-center gap-4 flex-shrink-0 z-10">
                 <button id="prevBtn" class="btn w-auto px-4">←</button>
                 <div class="flex-grow flex flex-col">
                     <input type="range" id="pageSlider" min="0" value="0" step="1">
-                    <div class="flex justify-between text-xs text-gray-500 font-mono mt-1">
+                    <div class="flex justify-between text-xs text-[#7A766F] font-mono mt-1">
                         <span id="pageCurrent">0</span>
                         <span id="pageTotal">0</span>
                     </div>
@@ -53,30 +53,30 @@
             </div>
         </div>
 
-        <div id="controlPanel" class="w-full md:w-64 bg-gray-50 p-4 border-l overflow-y-auto flex-shrink-0 space-y-5">
+        <div id="controlPanel" class="w-full md:w-64 bg-[#F5F4F1] p-4 border-l border-[#E5E2D9] overflow-y-auto flex-shrink-0 space-y-5">
             <div>
-                <h3 class="text-xs font-bold text-gray-500 uppercase mb-2">ファイル</h3>
+                <h3 class="text-xs font-bold text-[#7A766F] uppercase mb-2 font-serif tracking-wider">ファイル</h3>
                 <button id="btnOpenFolder" class="btn btn-primary mb-3 text-sm">📂 起点フォルダを選択</button>
                 
-                <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded p-3 text-center transition-colors hover:bg-gray-100">
-                    <p class="text-xs text-gray-500 mb-2 pointer-events-none">ZIP/フォルダをドロップ</p>
+                <div id="dropZone" class="border-2 border-dashed border-[#D6D3C9] rounded p-3 text-center transition-colors hover:bg-[#F0EFEA]">
+                    <p class="text-xs text-[#7A766F] mb-2 pointer-events-none">ZIP/フォルダをドロップ</p>
                     <button id="btnSelectFile" class="btn text-xs mb-1">ファイル選択...</button>
                     <input type="file" id="fileInput" accept=".zip" class="hidden">
                     <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden">
                 </div>
             </div>
 
-            <hr class="border-gray-200">
+            <hr class="border-[#E5E2D9]">
 
             <div>
-                <h3 class="text-xs font-bold text-gray-500 uppercase mb-2">表示モード</h3>
+                <h3 class="text-xs font-bold text-[#7A766F] uppercase mb-2 font-serif tracking-wider">表示モード</h3>
                 <div class="control-group" id="grpViewMode">
                     <button data-val="single" class="active">単一</button>
                     <button data-val="double">見開き</button>
                 </div>
                 
                 <div id="ctrlPageOrder" class="mt-3 hidden">
-                    <label class="text-xs text-gray-500 block mb-1 font-bold">綴じ方向</label>
+                    <label class="text-xs text-[#7A766F] block mb-1 font-bold font-serif">綴じ方向</label>
                     <div class="control-group" id="grpPageOrder">
                         <button data-val="left" class="active">左綴じ</button>
                         <button data-val="right">右綴じ</button>
@@ -85,7 +85,7 @@
             </div>
 
             <div>
-                <h3 class="text-xs font-bold text-gray-500 uppercase mb-2">自動再生</h3>
+                <h3 class="text-xs font-bold text-[#7A766F] uppercase mb-2 font-serif tracking-wider">自動再生</h3>
                 <div class="control-group" id="grpInterval">
                     <button data-val="1000">1秒</button>
                     <button data-val="3000" class="active">3秒</button>
@@ -94,7 +94,7 @@
                 <button id="btnAutoPlay" class="btn mt-2 text-sm">▶ 再生開始</button>
             </div>
 
-            <hr class="border-gray-200">
+            <hr class="border-[#E5E2D9]">
 
             <div class="space-y-2">
                 <button id="btnFullscreen" class="btn tooltip" data-tip="キー: F / ダブルクリック">⛶ フルスクリーン</button>
@@ -107,7 +107,7 @@
     <!-- Generic Modal Structure -->
     <div id="modalOverlay" class="modal-overlay hidden">
         <div id="modalContent" class="modal-content">
-            <h2 id="modalTitle" class="text-xl font-bold mb-6 text-gray-800"></h2>
+            <h2 id="modalTitle" class="text-xl font-bold mb-6 text-[#2D2B29] font-serif"></h2>
             <div id="modalBody"></div>
             <div id="modalAction" class="mt-6 text-right">
                 <button id="modalCloseBtn" class="btn">閉じる</button>
