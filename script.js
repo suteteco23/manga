@@ -44,14 +44,6 @@
                 };
             },
 
-            debounce(func, wait) {
-                let timeout;
-                return function(...args) {
-                    clearTimeout(timeout);
-                    timeout = setTimeout(() => func.apply(this, args), wait);
-                };
-            },
-
             sortByName(a, b) {
                 return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
             }
@@ -303,7 +295,14 @@
                     grpView: id('grpViewMode'),
                     grpOrder: id('grpPageOrder'),
                     grpInt: id('grpInterval'),
-                    orderCtrl: id('ctrlPageOrder')
+                    orderCtrl: id('ctrlPageOrder'),
+                    modal: {
+                        overlay: id('modalOverlay'),
+                        title: id('modalTitle'),
+                        body: id('modalBody'),
+                        action: id('modalAction'),
+                        closeBtn: id('modalCloseBtn'),
+                    }
                 };
             }
 
@@ -409,32 +408,40 @@
                 });
             }
 
-            showModal(title, content) {
-                const modal = document.createElement('div');
-                modal.className = 'modal-overlay';
+            showModal(title, content, actions = null) {
+                this.els.modal.title.innerHTML = title;
+                this.els.modal.body.innerHTML = content;
                 
-                const dialog = document.createElement('div');
-                dialog.className = 'modal-content';
-                dialog.innerHTML = `
-                    <h2 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 1.5rem; color: #374151;">${title}</h2>
-                    ${content}
-                    <button class="btn btn-primary mt-4">閉じる</button>
-                `;
-                
-                modal.appendChild(dialog);
-                document.body.appendChild(modal);
-                
-                const close = () => document.body.removeChild(modal);
-                dialog.querySelector('.btn').onclick = close;
-                modal.onclick = (e) => { if (e.target === modal) close(); };
-                
+                this.els.modal.action.innerHTML = '';
+                if (actions) {
+                    this.els.modal.action.appendChild(actions);
+                } else {
+                    const closeBtn = document.createElement('button');
+                    closeBtn.className = 'btn btn-primary';
+                    closeBtn.textContent = '閉じる';
+                    closeBtn.onclick = () => this.hideModal();
+                    this.els.modal.action.appendChild(closeBtn);
+                }
+
+                this.els.modal.overlay.classList.remove('hidden');
+
                 const escHandler = (e) => {
                     if (e.key === 'Escape') {
-                        close();
+                        this.hideModal();
                         document.removeEventListener('keydown', escHandler);
                     }
                 };
                 document.addEventListener('keydown', escHandler);
+                
+                this.els.modal.overlay.onclick = (e) => { 
+                    if (e.target === this.els.modal.overlay) {
+                        this.hideModal();
+                    }
+                };
+            }
+
+            hideModal() {
+                this.els.modal.overlay.classList.add('hidden');
             }
         }
 
@@ -826,90 +833,104 @@
             }
 
             _showFileSelectionDialog() {
-                const modal = document.createElement('div');
-                modal.className = 'modal-overlay';
+                const content = '<p class="text-sm text-gray-600">開くファイルの種類を選択してください。</p>';
                 
-                const dialog = document.createElement('div');
-                dialog.className = 'modal-content';
-                dialog.style.maxWidth = '400px';
-                dialog.innerHTML = `
-                    <h3 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem; color: #374151;">ファイルタイプを選択</h3>
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                        <button id="selectZipBtn" class="btn btn-primary">ZIPファイルを選択</button>
-                        <button id="selectFolderBtn" class="btn btn-primary">フォルダを選択</button>
-                        <button id="cancelBtn" class="btn">キャンセル</button>
-                    </div>
-                `;
+                const actions = document.createDocumentFragment();
                 
-                modal.appendChild(dialog);
-                document.body.appendChild(modal);
-                
-                const close = () => document.body.removeChild(modal);
-                
-                dialog.querySelector('#selectZipBtn').onclick = () => {
-                    close();
+                const zipBtn = document.createElement('button');
+                zipBtn.className = 'btn btn-primary';
+                zipBtn.textContent = 'ZIPファイルを選択';
+                zipBtn.onclick = () => {
+                    this.ui.hideModal();
                     document.getElementById('fileInput').click();
                 };
-                
-                dialog.querySelector('#selectFolderBtn').onclick = () => {
-                    close();
+
+                const folderBtn = document.createElement('button');
+                folderBtn.className = 'btn btn-primary ml-2';
+                folderBtn.textContent = 'フォルダを選択';
+                folderBtn.onclick = () => {
+                    this.ui.hideModal();
                     document.getElementById('folderInput').click();
                 };
-                
-                dialog.querySelector('#cancelBtn').onclick = close;
-                modal.onclick = (e) => { if (e.target === modal) close(); };
-                
-                const escHandler = (e) => {
-                    if (e.key === 'Escape') {
-                        close();
-                        document.removeEventListener('keydown', escHandler);
-                    }
-                };
-                document.addEventListener('keydown', escHandler);
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'btn ml-2';
+                cancelBtn.textContent = 'キャンセル';
+                cancelBtn.onclick = () => this.ui.hideModal();
+
+                actions.appendChild(zipBtn);
+                actions.appendChild(folderBtn);
+                actions.appendChild(cancelBtn);
+
+                this.ui.showModal('ファイルタイプを選択', content, actions);
             }
 
             _showHelp() {
-                const shortcuts = [
+                const keyboardShortcuts = [
                     { category: 'ナビゲーション', items: [
-                        { key: '← / →', desc: 'ページ移動（見開き時は2ページ）' },
-                        { key: 'Shift + ← / →', desc: '1ページずつ移動' },
-                        { key: 'Home', desc: '最初のページへ' },
-                        { key: 'End', desc: '最後のページへ' },
-                        { key: 'Space', desc: 'ページ移動（次へ）' }
+                        { key: '← / →', desc: 'ページ移動' },
+                        { key: 'Shift + ←/→', desc: '1ページずつ移動' },
+                        { key: 'Home / End', desc: '最初/最後のページへ' },
+                        { key: 'Space', desc: '次のページへ' },
                     ]},
                     { category: '表示モード', items: [
-                        { key: '1', desc: '単一ページ表示' },
-                        { key: '2', desc: '見開き表示' },
+                        { key: '1 / 2', desc: '単一 / 見開き表示' },
                         { key: 'F', desc: 'フルスクリーン切替' },
-                        { key: 'Esc', desc: 'フルスクリーン解除' }
+                        { key: 'Esc', desc: 'フルスクリーン解除' },
                     ]},
-                    { category: '操作', items: [
+                    { category: 'その他', items: [
                         { key: 'R', desc: 'ビューアーをリセット' },
                         { key: '?', desc: 'このヘルプを表示' },
-                        { key: 'クリック', desc: 'ページ送り（左右判定）' },
-                        { key: 'ダブルクリック', desc: 'フルスクリーン切替' },
-                        { key: 'ホイール', desc: 'ページ移動' }
                     ]}
                 ];
 
-                let content = '';
-                shortcuts.forEach(section => {
-                    content += `<h3 style="font-size: 1.125rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.75rem; color: #1f2937;">${section.category}</h3>`;
-                    content += '<table style="width: 100%; border-collapse: collapse; margin-bottom: 1rem;">';
+                const mouseActions = [
+                     { key: 'クリック (左半分)', desc: '前のページへ' },
+                     { key: 'クリック (右半分)', desc: '次のページへ' },
+                     { key: 'ダブルクリック', desc: 'フルスクリーン切替' },
+                     { key: 'ホイール', desc: 'ページ移動' },
+                ];
+
+                let content = '<div class="flex flex-col md:flex-row gap-6">';
+                
+                // Keyboard Section
+                content += '<div class="flex-1">';
+                content += '<h3 class="text-lg font-bold mb-3 text-gray-800 border-b pb-2">キーボード操作</h3>';
+                content += '<div class="space-y-4">';
+                keyboardShortcuts.forEach(section => {
+                    content += '<div>';
+                    content += `<h4 class="text-md font-semibold mb-2 text-gray-700">${section.category}</h4>`;
+                    content += '<table class="w-full text-sm">';
                     section.items.forEach(item => {
                         content += `
-                            <tr style="border-bottom: 1px solid #e5e7eb;">
-                                <td style="padding: 0.5rem; font-weight: 600; font-family: monospace; background: #f3f4f6; border-radius: 0.25rem; width: 35%;">${item.key}</td>
-                                <td style="padding: 0.5rem; padding-left: 1rem;">${item.desc}</td>
+                            <tr class="border-b">
+                                <td class="p-2 bg-gray-50 font-mono w-1/3 rounded">${item.key}</td>
+                                <td class="p-2">${item.desc}</td>
                             </tr>
                         `;
                     });
-                    content += '</table>';
+                    content += '</table></div>';
                 });
+                content += '</div></div>';
 
-                content += '<p style="margin-top: 1rem; font-size: 0.875rem; color: #6b7280;"><strong>※ 右綴じモード:</strong> 矢印キー・ホイール・クリック判定がすべて反転します</p>';
+                // Mouse Section
+                content += '<div class="flex-1">';
+                content += '<h3 class="text-lg font-bold mb-3 text-gray-800 border-b pb-2">マウス操作</h3>';
+                content += '<table class="w-full text-sm">';
+                mouseActions.forEach(item => {
+                    content += `
+                        <tr class="border-b">
+                            <td class="p-2 bg-gray-50 font-semibold w-1/3 rounded">${item.key}</td>
+                            <td class="p-2">${item.desc}</td>
+                        </tr>
+                    `;
+                });
+                content += '</table></div>';
 
-                this.ui.showModal('キーボードショートカット', content);
+                content += '</div>';
+                content += '<p class="mt-5 text-xs text-center text-gray-600"><strong>※ 右綴じモード:</strong> ナビゲーション操作（矢印キー・クリック・ホイール）がすべて反転します</p>';
+
+                this.ui.showModal('ヘルプ', content);
             }
         }
 
