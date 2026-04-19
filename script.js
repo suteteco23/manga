@@ -191,6 +191,11 @@
             get current() { return this.data.items[this.data.index]; }
             get total() { return this.data.items.length; }
             get hasItems() { return this.total > 0; }
+            get mode()     { return this.data.mode; }
+            get order()    { return this.data.order; }
+            get isDouble() { return this.data.mode === 'double'; }
+            get isRTL()    { return this.data.mode === 'double' && this.data.order === 'right'; }
+            get step()     { return this.data.mode === 'double' ? 2 : 1; }
 
             setItems(items) {
                 this.data.items.forEach(i => i.unload());
@@ -245,7 +250,7 @@
 
                 // 1. プリロード範囲の特定（ロード対象）
                 const loadStart = Math.max(0, currentIndex - preload);
-                const loadEnd = Math.min(this.total, currentIndex + preload + (this.data.mode === 'double' ? 2 : 1));
+                const loadEnd = Math.min(this.total, currentIndex + preload + this.step);
                 
                 // 2. メモリ保持範囲の特定（これ以外は開放）
                 const keepStart = Math.max(0, currentIndex - windowSize);
@@ -314,7 +319,7 @@
                     if (saved.interval) this.state.setSetting('interval', saved.interval);
                     const w = localStorage.getItem('sidebar_width');
                     if(w) this.els.sidebar.style.width = w + 'px';
-                } catch(e){}
+                } catch(e){ console.warn('設定読み込み失敗:', e); }
             }
 
             setLoading(isLoading, text = 'Loading...') {
@@ -331,27 +336,29 @@
             }
 
             render(data) {
-                const { items, index, mode, order, isPlaying, isFullscreen } = data;
+                const { items, index, mode, order, isPlaying, isFullscreen, interval } = data;
                 const hasItems = items.length > 0;
+                this._renderLayout(hasItems, mode, order, isPlaying, isFullscreen, interval);
+                if (!hasItems) return;
+                this._renderImages(items, index, mode, order);
+                this._renderNavigation(items, index, mode, order);
+            }
 
+            _renderLayout(hasItems, mode, order, isPlaying, isFullscreen, interval) {
                 this.els.placeholder.classList.toggle('hidden', hasItems);
                 this.els.container.classList.toggle('hidden', !hasItems);
                 this.els.navBar.classList.toggle('hidden', !hasItems);
                 this.els.orderCtrl.classList.toggle('hidden', mode !== 'double');
-
                 this._updateBtnGroup(this.els.grpView, mode);
                 this._updateBtnGroup(this.els.grpOrder, order);
-                this._updateBtnGroup(this.els.grpInt, data.interval);
-                
+                this._updateBtnGroup(this.els.grpInt, interval);
                 this.els.playBtn.textContent = isPlaying ? '■ 停止' : '▶ 再生開始';
                 this.els.playBtn.classList.toggle('btn-primary', isPlaying);
-
                 document.body.classList.toggle('fullscreen-mode', isFullscreen);
                 this.els.fsBtn.textContent = isFullscreen ? '⛶ 解除' : '⛶ フルスクリーン';
+            }
 
-                if (!hasItems) return;
-
-                // 画像描画
+            _renderImages(items, index, mode, order) {
                 this.els.container.className = `image-container ${mode === 'double' ? 'double-page' : ''}`;
                 this.els.container.innerHTML = '';
                 const indices = this._getIndices(index, items.length, mode, order);
@@ -359,37 +366,25 @@
                     const div = document.createElement('div');
                     div.className = 'image-wrapper';
                     if (i < items.length) {
-                        const item = items[i];
                         const img = document.createElement('img');
-                        img.alt = item.name;
-                        // 非同期ロード
-                        item.getUrl().then(url => {
-                            if(url) img.src = url;
-                        });
+                        img.alt = items[i].name;
+                        items[i].getUrl().then(url => { if (url) img.src = url; });
                         div.appendChild(img);
                     }
                     this.els.container.appendChild(div);
                 });
-
-                // ページ情報更新
                 this.els.pageCur.textContent = indices.map(i => i + 1).join('-');
                 this.els.pageTot.textContent = items.length;
+            }
 
-                // スライダー更新（右綴じ対応）
+            _renderNavigation(items, index, mode, order) {
                 if (!this.isSliderDragging) {
                     const step = mode === 'double' ? 2 : 1;
                     const max = Math.max(0, items.length - step);
                     this.els.slider.max = max;
                     this.els.slider.step = 1;
-                    
-                    let sliderVal = index;
-                    if (mode === 'double' && order === 'right') {
-                        sliderVal = max - index;
-                    }
-                    this.els.slider.value = sliderVal;
+                    this.els.slider.value = (mode === 'double' && order === 'right') ? max - index : index;
                 }
-
-                // ボタンラベル更新（右綴じ対応）
                 const isRTL = (mode === 'double' && order === 'right');
                 this.els.prevBtn.textContent = isRTL ? '次へ (→)' : '← 前へ';
                 this.els.nextBtn.textContent = isRTL ? '前へ (←)' : '次へ →';
@@ -443,6 +438,10 @@
             hideModal() {
                 this.els.modal.overlay.classList.add('hidden');
             }
+
+            showError(message) {
+                this.showModal('エラー', `<p class="text-red-600">${message}</p>`);
+            }
         }
 
         /** Main Controller */
@@ -457,87 +456,61 @@
             }
 
             _initEvents() {
-                const { ui, state } = this;
+                this._initKeyboard();
+                this._initWheel();
+                this._initClickHandlers();
+                this._initSlider();
+                this._initButtons();
+            }
 
-                // キーボード操作（右綴じ対応）
+            _initKeyboard() {
+                const { state } = this;
                 document.addEventListener('keydown', e => {
                     if (e.target.tagName === 'INPUT') return;
                     const k = e.key;
-                    
-                    // ヘルプ表示
+
                     if (CONFIG.KEYS.HELP.includes(k)) {
                         e.preventDefault();
                         this._showHelp();
                         return;
                     }
-                    
-                    // リセット
                     if (CONFIG.KEYS.RESET.includes(k)) {
                         e.preventDefault();
                         if (confirm('ビューアーをリセットしますか？')) state.reset();
                         return;
                     }
-                    
-                    // 表示モード切替
-                    if (CONFIG.KEYS.SINGLE.includes(k)) {
-                        state.setSetting('mode', 'single');
-                        this._saveSettings();
-                        return;
-                    }
-                    if (CONFIG.KEYS.DOUBLE.includes(k)) {
-                        state.setSetting('mode', 'double');
-                        this._saveSettings();
-                        return;
-                    }
-                    
+                    if (CONFIG.KEYS.SINGLE.includes(k)) { state.setSetting('mode', 'single'); this._saveSettings(); return; }
+                    if (CONFIG.KEYS.DOUBLE.includes(k)) { state.setSetting('mode', 'double'); this._saveSettings(); return; }
+
                     if (!state.hasItems) return;
-                    
+
                     // Shiftキー押下で1ページずつ移動
-                    const step = (state.data.mode === 'double' && !e.shiftKey) ? 2 : 1;
-                    const isRTL = (state.data.mode === 'double' && state.data.order === 'right');
-                    const dirNext = isRTL ? -1 : 1;
+                    const step = (state.isDouble && !e.shiftKey) ? 2 : 1;
+                    const dirNext = state.isRTL ? -1 : 1;
 
-                    if (CONFIG.KEYS.NEXT.includes(k)) {
-                        e.preventDefault();
-                        this._move(step * dirNext);
-                    }
-                    if (CONFIG.KEYS.PREV.includes(k)) {
-                        e.preventDefault();
-                        this._move(-step * dirNext);
-                    }
-                    if (CONFIG.KEYS.HOME.includes(k)) {
-                        e.preventDefault();
-                        state.setIndex(0);
-                    }
-                    if (CONFIG.KEYS.END.includes(k)) {
-                        e.preventDefault();
-                        const endStep = state.data.mode === 'double' ? 2 : 1;
-                        state.setIndex(Math.max(0, state.total - endStep));
-                    }
-                    if (CONFIG.KEYS.FS.includes(k)) {
-                        e.preventDefault();
-                        this._toggleFullscreen();
-                    }
-                    if (CONFIG.KEYS.ESC.includes(k) && document.fullscreenElement) {
-                        document.exitFullscreen();
-                    }
+                    if (CONFIG.KEYS.NEXT.includes(k)) { e.preventDefault(); this._move(step * dirNext); }
+                    if (CONFIG.KEYS.PREV.includes(k)) { e.preventDefault(); this._move(-step * dirNext); }
+                    if (CONFIG.KEYS.HOME.includes(k)) { e.preventDefault(); state.setIndex(0); }
+                    if (CONFIG.KEYS.END.includes(k))  { e.preventDefault(); state.setIndex(Math.max(0, state.total - state.step)); }
+                    if (CONFIG.KEYS.FS.includes(k))   { e.preventDefault(); this._toggleFullscreen(); }
+                    if (CONFIG.KEYS.ESC.includes(k) && document.fullscreenElement) document.exitFullscreen();
                 });
+            }
 
-                // ホイール操作（右綴じ対応）
+            _initWheel() {
+                const { state } = this;
                 const wheelHandler = Utils.throttle((e) => {
                     if (!state.hasItems) return;
                     e.preventDefault();
-                    
                     const dir = e.deltaY > 0 ? 1 : -1;
-                    const step = state.data.mode === 'double' ? 2 : 1;
-                    const isRTL = (state.data.mode === 'double' && state.data.order === 'right');
-                    this._move(dir * step * (isRTL ? -1 : 1));
+                    this._move(dir * state.step * (state.isRTL ? -1 : 1));
                 }, CONFIG.WHEEL_THROTTLE);
+                this.ui.els.host.addEventListener('wheel', wheelHandler, { passive: false });
+            }
 
-                ui.els.host.addEventListener('wheel', wheelHandler, { passive: false });
-
-                // クリック/ダブルクリック
-                ui.els.host.addEventListener('click', e => {
+            _initClickHandlers() {
+                const { state } = this;
+                this.ui.els.host.addEventListener('click', e => {
                     if (!state.hasItems) return;
                     if (this.clickTimer) clearTimeout(this.clickTimer);
                     this.clickTimer = setTimeout(() => {
@@ -545,123 +518,83 @@
                         this.clickTimer = null;
                     }, CONFIG.CLICK_DELAY);
                 });
-
-                ui.els.host.addEventListener('dblclick', () => {
-                    if (this.clickTimer) {
-                        clearTimeout(this.clickTimer);
-                        this.clickTimer = null;
-                    }
+                this.ui.els.host.addEventListener('dblclick', () => {
+                    if (this.clickTimer) { clearTimeout(this.clickTimer); this.clickTimer = null; }
                     this._toggleFullscreen();
                 });
-
-                // フルスクリーン同期
                 const syncFs = () => state.setFullscreen(!!document.fullscreenElement);
                 document.addEventListener('fullscreenchange', syncFs);
                 document.addEventListener('webkitfullscreenchange', syncFs);
+            }
 
-                // スライダー（右綴じ対応）
+            _initSlider() {
+                const { state, ui } = this;
                 const slider = ui.els.slider;
-                slider.addEventListener('mousedown', () => ui.isSliderDragging = true);
-                slider.addEventListener('mouseup', () => ui.isSliderDragging = false);
+                slider.addEventListener('mousedown',  () => ui.isSliderDragging = true);
+                slider.addEventListener('mouseup',    () => ui.isSliderDragging = false);
                 slider.addEventListener('touchstart', () => ui.isSliderDragging = true);
-                slider.addEventListener('touchend', () => ui.isSliderDragging = false);
+                slider.addEventListener('touchend',   () => ui.isSliderDragging = false);
                 slider.addEventListener('input', (e) => {
                     if (state.data.isPlaying) this._stopAutoPlay();
                     let val = parseInt(e.target.value, 10);
-                    
-                    if (state.data.mode === 'double' && state.data.order === 'right') {
-                        val = parseInt(slider.max, 10) - val;
-                    }
+                    if (state.isRTL) val = parseInt(slider.max, 10) - val;
                     state.setIndex(val);
                 });
+            }
 
-                // UIボタン
-                document.getElementById('btnSelectFile').onclick = () => {
-                    this._showFileSelectionDialog();
-                };
-                
+            _initButtons() {
+                const { state, ui } = this;
+
+                document.getElementById('btnSelectFile').onclick = () => this._showFileSelectionDialog();
                 document.getElementById('fileInput').onchange = (e) => {
                     if (e.target.files[0]) this._loadZip(e.target.files[0]);
                     e.target.value = '';
                 };
-                
                 document.getElementById('folderInput').onchange = async (e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                        await this._loadFiles(e.target.files);
-                    }
+                    if (e.target.files && e.target.files.length > 0) await this._loadFiles(e.target.files);
                     e.target.value = '';
                 };
-                
                 document.getElementById('btnOpenFolder').onclick = () => this._browseDir();
 
                 const bindGroup = (el, key) => {
                     el.onclick = (e) => {
                         const btn = e.target.closest('button');
-                        if (btn) {
-                            state.setSetting(key, btn.dataset.val);
-                            this._saveSettings();
-                        }
+                        if (btn) { state.setSetting(key, btn.dataset.val); this._saveSettings(); }
                     };
                 };
-                bindGroup(ui.els.grpView, 'mode');
+                bindGroup(ui.els.grpView,  'mode');
                 bindGroup(ui.els.grpOrder, 'order');
-                
+
                 ui.els.grpInt.onclick = (e) => {
                     const btn = e.target.closest('button');
-                    if(btn) {
-                        state.setSetting('interval', parseInt(btn.dataset.val));
-                        this._saveSettings();
-                    }
+                    if (btn) { state.setSetting('interval', parseInt(btn.dataset.val)); this._saveSettings(); }
                 };
 
-                ui.els.prevBtn.onclick = () => {
-                    const step = state.data.mode === 'double' ? 2 : 1;
-                    const isRTL = state.data.mode === 'double' && state.data.order === 'right';
-                    this._move(-step * (isRTL ? -1 : 1));
-                };
-                
-                ui.els.nextBtn.onclick = () => {
-                    const step = state.data.mode === 'double' ? 2 : 1;
-                    const isRTL = state.data.mode === 'double' && state.data.order === 'right';
-                    this._move(step * (isRTL ? -1 : 1));
-                };
-                
+                ui.els.prevBtn.onclick = () => this._move(-state.step * (state.isRTL ? -1 : 1));
+                ui.els.nextBtn.onclick = () => this._move( state.step * (state.isRTL ? -1 : 1));
                 ui.els.playBtn.onclick = () => {
                     state.togglePlay();
                     state.data.isPlaying ? this._startAutoPlay() : this._stopAutoPlay();
                 };
-                
                 ui.els.fsBtn.onclick = () => this._toggleFullscreen();
-                
-                document.getElementById('btnReset').onclick = () => {
-                    if(confirm('リセットしますか？')) state.reset();
-                };
-                
-                document.getElementById('btnHelp').onclick = () => this._showHelp();
 
-                // D&D
+                document.getElementById('btnReset').onclick = () => { if (confirm('リセットしますか？')) state.reset(); };
+                document.getElementById('btnHelp').onclick  = () => this._showHelp();
+
                 const dropZone = document.getElementById('dropZone');
-                dropZone.ondragover = (e) => {
-                    e.preventDefault();
-                    dropZone.classList.add('dragging');
-                };
+                dropZone.ondragover  = (e) => { e.preventDefault(); dropZone.classList.add('dragging'); };
                 dropZone.ondragleave = () => dropZone.classList.remove('dragging');
-                dropZone.ondrop = (e) => {
-                    e.preventDefault();
-                    dropZone.classList.remove('dragging');
-                    this._handleDrop(e.dataTransfer);
-                };
+                dropZone.ondrop      = (e) => { e.preventDefault(); dropZone.classList.remove('dragging'); this._handleDrop(e.dataTransfer); };
 
-                state.subscribe(d => this._saveSettings());
+                state.subscribe(() => this._saveSettings());
             }
 
             _handleSingleClick(e) {
                 const rect = this.ui.els.host.getBoundingClientRect();
                 const isLeft = e.clientX < rect.left + rect.width / 2;
-                const isRTL = this.state.data.mode === 'double' && this.state.data.order === 'right';
-                
+                const isRTL = this.state.isRTL;
                 const dir = isLeft ? -1 : 1;
-                const step = this.state.data.mode === 'double' ? 2 : 1;
+                const step = this.state.step;
                 this._move(dir * step * (isRTL ? -1 : 1));
             }
 
@@ -672,7 +605,7 @@
             _startAutoPlay() {
                 if(this.timer) clearInterval(this.timer);
                 this.timer = setInterval(() => {
-                    const step = this.state.data.mode === 'double' ? 2 : 1;
+                    const step = this.state.step;
                     if (this.state.data.index >= this.state.total - step) {
                         this.state.togglePlay();
                         this._stopAutoPlay();
@@ -690,9 +623,9 @@
 
             _toggleFullscreen() {
                 if (!document.fullscreenElement) {
-                    document.getElementById('mainArea').requestFullscreen().catch(()=>{});
+                    document.getElementById('mainArea').requestFullscreen().catch(e => { if (e.name !== 'NotAllowedError') console.warn(e); });
                 } else {
-                    document.exitFullscreen().catch(()=>{});
+                    document.exitFullscreen().catch(e => { if (e.name !== 'NotAllowedError') console.warn(e); });
                 }
             }
 
@@ -702,8 +635,7 @@
                     const res = await FileLoader.loadZip(file, (p, t) => this.ui.updateProgress(p, t));
                     this.state.setItems(res.items);
                 } catch (e) {
-                    console.error(e);
-                    alert(e.message || 'ZIP読み込みエラー');
+                    this.ui.showError(e.message || 'ZIP読み込みエラー');
                 } finally {
                     this.ui.setLoading(false);
                 }
@@ -715,7 +647,7 @@
                     const res = await FileLoader.loadInputFiles(files);
                     this.state.setItems(res.items);
                 } catch (e) {
-                    alert('エラー');
+                    this.ui.showError('フォルダの読み込みに失敗しました。');
                 } finally {
                     this.ui.setLoading(false);
                 }
@@ -725,7 +657,9 @@
                 try {
                     const handle = await window.showDirectoryPicker();
                     this._buildTree(handle);
-                } catch (e) {}
+                } catch (e) {
+                    if (e.name !== 'AbortError') console.warn('フォルダ選択:', e);
+                }
             }
 
             async _handleDrop(dt) {
@@ -737,10 +671,11 @@
                         this.ui.setLoading(true, 'フォルダ解析中...');
                         try {
                             const res = await FileLoader.loadFromDroppedFolder(entry);
-                            if(res.items.length) this.state.setItems(res.items);
-                            else alert('画像なし');
+                            if (res.items.length) this.state.setItems(res.items);
+                            else this.ui.showError('フォルダ内に画像ファイルが見つかりません。');
                         } catch(e) {
                             console.error(e);
+                            this.ui.showError('フォルダの読み込みに失敗しました。');
                         } finally {
                             this.ui.setLoading(false);
                         }
@@ -826,8 +761,8 @@
 
             _saveSettings() {
                 localStorage.setItem('viewer_settings', JSON.stringify({
-                    mode: this.state.data.mode,
-                    order: this.state.data.order,
+                    mode: this.state.mode,
+                    order: this.state.order,
                     interval: this.state.data.interval
                 }));
             }
