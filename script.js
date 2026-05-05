@@ -386,8 +386,10 @@
                     this.els.slider.value = (mode === 'double' && order === 'right') ? max - index : index;
                 }
                 const isRTL = (mode === 'double' && order === 'right');
-                this.els.prevBtn.textContent = isRTL ? '次へ (→)' : '← 前へ';
-                this.els.nextBtn.textContent = isRTL ? '前へ (←)' : '次へ →';
+                this.els.prevBtn.textContent = isRTL ? '← 次へ' : '← 前へ';
+                this.els.nextBtn.textContent = isRTL ? '前へ →' : '次へ →';
+                this.els.prevBtn.setAttribute('aria-label', isRTL ? '次のページ' : '前のページ');
+                this.els.nextBtn.setAttribute('aria-label', isRTL ? '前のページ' : '次のページ');
             }
 
             _getIndices(current, total, mode, order) {
